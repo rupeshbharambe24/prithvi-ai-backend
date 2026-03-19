@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    POETRY_VERSION=1.8.3
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl libpq-dev gcc \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy metadata first (caches better)
+COPY pyproject.toml README.md ./
+
+# ⬇️ This line is REQUIRED so Poetry finds the package
+COPY backend ./backend
+
+RUN pip install --no-cache-dir "poetry==1.8.3" \
+ && poetry config virtualenvs.create false \
+ && poetry install --no-interaction --no-ansi
+
+ENV PYTHONPATH=/app
+
+EXPOSE 8000
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+

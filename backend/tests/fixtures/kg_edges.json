@@ -1,0 +1,17 @@
+[
+  {"src": 1, "dst": 4, "rel": "CAUSES", "weight": 0.9, "props": {"mechanism": "fluid loss from sweating"}},
+  {"src": 1, "dst": 5, "rel": "CAUSES", "weight": 0.85, "props": {"mechanism": "overwhelms cooling capacity"}},
+  {"src": 2, "dst": 5, "rel": "EXACERBATES", "weight": 0.7, "props": {"mechanism": "reduces evaporative cooling"}},
+  {"src": 4, "dst": 6, "rel": "CAUSES", "weight": 0.8, "props": {}},
+  {"src": 5, "dst": 6, "rel": "CAUSES", "weight": 0.95, "props": {}},
+  {"src": 3, "dst": 7, "rel": "CAUSES", "weight": 0.75, "props": {"mechanism": "airway inflammation"}},
+  {"src": 1, "dst": 8, "rel": "EXACERBATES", "weight": 0.6, "props": {"mechanism": "accelerates mosquito breeding cycle"}},
+  {"src": 2, "dst": 8, "rel": "EXACERBATES", "weight": 0.65, "props": {"mechanism": "creates breeding habitats"}},
+  {"src": 10, "dst": 6, "rel": "MITIGATES", "weight": 0.7, "props": {"efficacy": "22% reduction in heat illness"}},
+  {"src": 11, "dst": 8, "rel": "MITIGATES", "weight": 0.6, "props": {"efficacy": "40-60% reduction in vector density"}},
+  {"src": 6, "dst": 12, "rel": "SUPPORTED_BY", "weight": 1.0, "props": {}},
+  {"src": 8, "dst": 13, "rel": "SUPPORTED_BY", "weight": 1.0, "props": {}},
+  {"src": 7, "dst": 14, "rel": "SUPPORTED_BY", "weight": 1.0, "props": {}},
+  {"src": 10, "dst": 15, "rel": "SUPPORTED_BY", "weight": 1.0, "props": {}},
+  {"src": 9, "dst": 16, "rel": "SUPPORTED_BY", "weight": 0.8, "props": {}}
+]

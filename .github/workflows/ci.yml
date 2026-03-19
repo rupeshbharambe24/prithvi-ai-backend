@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Copy env
+        working-directory: backend
+        run: cp .env.example .env
+      - name: Build and start services
+        working-directory: backend
+        run: |
+          make up
+          sleep 10
+      - name: Migrate and seed
+        working-directory: backend
+        run: |
+          make migrate
+          make seed
+      - name: Lint
+        working-directory: backend
+        run: |
+          docker compose -f infra/docker-compose.yml exec -T api bash -lc "ruff check backend && black --check backend && isort --check-only backend"
+      - name: Tests
+        working-directory: backend
+        run: make test
+      - name: Shutdown
+        if: always()
+        working-directory: backend
+        run: make down
+

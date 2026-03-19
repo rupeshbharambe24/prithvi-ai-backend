@@ -1,0 +1,10 @@
+FROM osgeo/gdal:ubuntu-small-3.8.5
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tippecanoe \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+# No extra Python deps required for tiles building in this step
+

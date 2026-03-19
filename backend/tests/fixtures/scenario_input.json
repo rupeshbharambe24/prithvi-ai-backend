@@ -1,0 +1,11 @@
+{
+  "regions": [1],
+  "horizon": 7,
+  "interventions": {
+    "cooling_centers": {"capacity_add": 100},
+    "outreach": {"coverage": 0.2},
+    "vector_control": {"efficacy": 0.5},
+    "staffing": {"delta": 5}
+  }
+}
+

@@ -1,0 +1,12 @@
+# keep the code! do NOT ignore /backend
+__pycache__/
+.venv/
+.env
+!.env.example
+.pytest_cache/
+dist/
+build/
+node_modules/
+*.db
+ml_artifacts/
+*.egg-info/

@@ -1,0 +1,32 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    POETRY_VERSION=1.8.3
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl libpq-dev gcc \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
+
+WORKDIR /app
+
+# copy project metadata first (better cache)
+COPY pyproject.toml README.md ./
+
+# copy the actual python package source so poetry can install it
+COPY backend ./backend
+
+# now install
+RUN poetry config virtualenvs.create false \
+ && poetry install --no-interaction --no-ansi
+
+
+COPY backend ./backend
+
+ENV PYTHONPATH=/app
+
+CMD ["celery", "-A", "backend.app.workers.celery_app:celery_app", "worker", "-l", "info", "-Q", "celery"]
+

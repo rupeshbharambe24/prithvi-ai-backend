@@ -1,0 +1,11 @@
+FROM postgres:14
+
+# Install PostGIS + pgvector for Postgres 14
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      postgresql-14-postgis-3 \
+      postgresql-14-postgis-3-scripts \
+      postgresql-14-pgvector \
+ && rm -rf /var/lib/apt/lists/*
+
+# Nothing else needed; the extensions will now be available to CREATE EXTENSION in SQL

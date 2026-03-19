@@ -1,0 +1,3 @@
+doi,url,title,abstract,year,source,strength,quality,summary_md,tags
+10.1234/abcd,http://example.com/paper1,Heat effects on health,"Study abstract",2023,WHO,0.8,high,"Strong association found.",heat|risk
+

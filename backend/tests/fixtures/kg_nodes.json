@@ -1,0 +1,19 @@
+[
+  {"id": 1, "type": "Driver", "label": "Extreme Heat", "props": {"desc": "Sustained high temperatures exceeding 40°C", "risk_factor": "temperature"}},
+  {"id": 2, "type": "Driver", "label": "High Humidity", "props": {"desc": "Relative humidity above 70%, reducing evaporative cooling", "risk_factor": "humidity"}},
+  {"id": 3, "type": "Driver", "label": "Poor Air Quality", "props": {"desc": "PM2.5 concentrations exceeding WHO guidelines", "risk_factor": "pm25"}},
+  {"id": 4, "type": "Mechanism", "label": "Dehydration", "props": {"desc": "Fluid loss from excessive sweating and inadequate intake"}},
+  {"id": 5, "type": "Mechanism", "label": "Thermoregulatory Failure", "props": {"desc": "Body unable to maintain safe core temperature"}},
+  {"id": 6, "type": "Outcome", "label": "Heat Stroke", "props": {"desc": "Life-threatening condition with core temp >40°C", "riskId": 6}},
+  {"id": 7, "type": "Outcome", "label": "Respiratory Distress", "props": {"desc": "Acute breathing difficulty from combined heat and pollution", "riskId": 7}},
+  {"id": 8, "type": "Disease", "label": "Dengue", "props": {"desc": "Mosquito-borne viral infection, climate-sensitive transmission", "vector": "Aedes aegypti"}},
+  {"id": 9, "type": "Disease", "label": "Malaria", "props": {"desc": "Plasmodium infection transmitted by Anopheles mosquitoes", "vector": "Anopheles"}},
+  {"id": 10, "type": "Intervention", "label": "Cooling Centers", "props": {"desc": "Public air-conditioned spaces during heat emergencies", "cost_per_unit": 5000}},
+  {"id": 11, "type": "Intervention", "label": "Vector Control", "props": {"desc": "Mosquito breeding site elimination and larviciding", "efficacy": 0.6}},
+  {"id": 12, "type": "Evidence", "label": "Lancet Heat Mortality Review 2023", "props": {"evidence_id": 1, "doi": "10.1016/S0140-6736(23)01345-2"}},
+  {"id": 13, "type": "Evidence", "label": "Nature Climate Dengue Projections", "props": {"evidence_id": 2, "doi": "10.1038/s41558-022-01234-x"}},
+  {"id": 14, "type": "Evidence", "label": "EHP PM2.5 Respiratory Study", "props": {"evidence_id": 3, "doi": "10.1289/EHP8765"}},
+  {"id": 15, "type": "Evidence", "label": "Cooling Center Effectiveness Study", "props": {"evidence_id": 4}},
+  {"id": 16, "type": "Evidence", "label": "Cholera Rainfall Association", "props": {"evidence_id": 5, "doi": "10.1371/journal.pmed.1003890"}},
+  {"id": 17, "type": "Evidence", "label": "Hospital Surge Capacity Study", "props": {"evidence_id": 6, "doi": "10.1097/PHH.0000000000001234"}}
+]

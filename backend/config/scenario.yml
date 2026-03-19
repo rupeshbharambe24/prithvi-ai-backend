@@ -1,0 +1,6 @@
+coefficients:
+  beta1: 0.001
+  beta2: 0.005
+  beta3: 0.010
+  beta4: 0.002
+

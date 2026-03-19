@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"code": "P1", "pop": 1000, "age65p": 0.1},
+      "geometry": {
+        "type": "Point",
+        "coordinates": [0.5,0.5]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {"code": "P2", "pop": 800, "age65p": 0.15},
+      "geometry": {
+        "type": "Point",
+        "coordinates": [2.5,2.5]
+      }
+    }
+  ]
+}
+
