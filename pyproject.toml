@@ -44,6 +44,8 @@ xgboost = ">=2.0"
 spacy = ">=3.7"
 fairlearn = ">=0.10"
 evidently = ">=0.4"
+fastembed = ">=0.3"
+pytrends = ">=4.9"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"

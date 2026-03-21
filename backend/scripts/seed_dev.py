@@ -402,6 +402,7 @@ async def seed_etl_data(db: AsyncSession, region_map: dict[str, int]) -> None:
     from backend.app.services.etl.era5 import flow_era5_ingest
     from backend.app.services.etl.who_gho import flow_who_gho_ingest
     from backend.app.services.etl.population import flow_population_vulnerability
+    from backend.app.services.etl.google_trends import flow_google_trends_ingest
 
     now = datetime.now(timezone.utc)
     try:
@@ -419,6 +420,11 @@ async def seed_etl_data(db: AsyncSession, region_map: dict[str, int]) -> None:
         log.info("seed_etl_population: %s", result)
     except Exception as e:
         log.warning("seed_etl_population_failed: %s", e)
+    try:
+        result = await flow_google_trends_ingest(db, lookback_weeks=12)
+        log.info("seed_etl_google_trends: %s", result)
+    except Exception as e:
+        log.warning("seed_etl_google_trends_failed: %s", e)
 
 
 async def seed_ml_models(db: AsyncSession, region_map: dict[str, int]) -> None:

@@ -199,6 +199,7 @@ async def _daily_ingest() -> None:
     from .services.etl.openaq import flow_openaq_ingest
     from .services.etl.who_gho import flow_who_gho_ingest
     from .services.etl.population import flow_population_vulnerability
+    from .services.etl.google_trends import flow_google_trends_ingest
 
     logger.info("scheduled_daily_ingest_started")
     now = datetime.now(timezone.utc)
@@ -231,6 +232,13 @@ async def _daily_ingest() -> None:
             logger.info("daily_ingest_population", rows=result_pop.get("rows", 0))
     except Exception as e:
         logger.error("daily_ingest_population_failed", error=str(e))
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result_gt = await flow_google_trends_ingest(db, lookback_weeks=4)
+            logger.info("daily_ingest_google_trends", rows=result_gt.get("rows", 0))
+    except Exception as e:
+        logger.error("daily_ingest_google_trends_failed", error=str(e))
 
     logger.info("scheduled_daily_ingest_complete")
 
