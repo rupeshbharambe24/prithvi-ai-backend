@@ -21,7 +21,7 @@ router = APIRouter(prefix="/scenario", tags=["scenario"])
 async def scenario_run(payload: dict, _=Depends(require_roles(UserRole.ORG_ADMIN, UserRole.EPIDEMIOLOGIST)), db: AsyncSession = Depends(get_db)):
     # inline execution for simplicity; also enqueue background version
     res = await run_scenario(db, payload)
-    return {"delta": res.delta, "ci": res.ci, "assumptions": res.assumptions, "costEstimate": res.costEstimate, "effectivenessScore": res.effectivenessScore, "coeffSource": res.coeffSource}
+    return {"delta": res.delta, "ci": res.ci, "assumptions": res.assumptions, "costEstimate": res.costEstimate, "effectivenessScore": res.effectivenessScore, "coeffSource": res.coeffSource, "evidenceSources": res.evidenceSources}
 
 
 @router.post("/run/job", dependencies=[Depends(csrf_protect)])
