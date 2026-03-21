@@ -33,5 +33,6 @@ async def pm25(regionId: int, horizon: str = "72h", _=Depends(require_roles(User
     """), {"rid": regionId, "start": start, "end": end})
     series = [{"date": _parse_date(d), "pm25": v, "p05": p05, "p95": p95} for d, v, p05, p95 in res.fetchall()]
     if not series:
-        series = [{"date": (datetime.now(timezone.utc).date() + timedelta(days=i)).isoformat(), "pm25": 15 + i, "p05": 10, "p95": 25} for i in range(days)]
+        return {"series": [], "status": "no_data",
+                "message": "No PM2.5 forecast data. Run ETL + model training first."}
     return {"series": series}

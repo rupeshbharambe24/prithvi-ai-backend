@@ -55,7 +55,10 @@ async def heat_risk(regionId: int, horizon: str = "7d", _=Depends(require_roles(
         series.append({"date": _parse_date(r[0]), "risk": r[1], "p05": r[2], "p95": r[3]})
         if r[4] and not drivers:
             drivers = _parse_json(r[4]) or []
-    return {"series": series, "drivers": drivers or [{"feature": "t2m_max", "shap": 0.1}], "map": {}}
+    if not series:
+        return {"series": [], "drivers": [], "status": "no_data",
+                "message": "No heat forecast data. Run ETL + model training first."}
+    return {"series": series, "drivers": drivers, "map": {}}
 
 
 @router.get("/disease")
@@ -65,11 +68,18 @@ async def disease_risk(type: str = "dengue", regionId: int = 1, horizon: str = "
     start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
     end = start + timedelta(days=days + 1)
     res = await db.execute(text("""
-        SELECT target_date, value, p05, p95 FROM forecasts
+        SELECT target_date, value, p05, p95, drivers_json FROM forecasts
         WHERE region_id=:rid AND type='disease' AND target_date >= :start AND target_date <= :end
         ORDER BY target_date ASC
     """), {"rid": regionId, "start": start, "end": end})
-    series = [{"date": _parse_date(d), "risk": v, "p05": p05, "p95": p95} for d, v, p05, p95 in res.fetchall()]
+    rows = res.fetchall()
+    series = [{"date": _parse_date(r[0]), "risk": r[1], "p05": r[2], "p95": r[3]} for r in rows]
+    drivers = []
+    for r in rows:
+        if len(r) > 4 and r[4] and not drivers:
+            drivers = _parse_json(r[4]) or []
+            break
     if not series:
-        series = [{"date": (datetime.now(timezone.utc).date() + timedelta(days=i)).isoformat(), "risk": 0.3 + 0.01*i, "p05": 0.2, "p95": 0.6} for i in range(min(7, days))]
-    return {"series": series, "drivers": [{"feature": "rain", "shap": 0.1}]}
+        return {"series": [], "drivers": [], "status": "no_data",
+                "message": "No disease forecast data. Run ETL + model training first."}
+    return {"series": series, "drivers": drivers}

@@ -22,32 +22,48 @@ PSI_THRESHOLD_WARNING = 0.1    # Moderate drift
 PSI_THRESHOLD_CRITICAL = 0.25  # Significant drift
 
 
-def _psi(reference: np.ndarray, current: np.ndarray, bins: int = 10) -> float:
-    """Compute Population Stability Index between two distributions."""
-    if len(reference) < 5 or len(current) < 5:
-        return 0.0
+def _psi(reference: np.ndarray, current: np.ndarray, bins: int = 10) -> tuple[float, dict]:
+    """Compute Population Stability Index between two distributions.
 
-    # Create bins from reference distribution
+    Returns (psi_value, bin_data) where bin_data contains edges and frequencies
+    for rendering distribution histograms.
+    """
+    empty_bins = {"edges": [], "ref_freq": [], "cur_freq": []}
+
+    if len(reference) < 5 or len(current) < 5:
+        return 0.0, empty_bins
+
     qs = np.linspace(0, 1, bins + 1)
     try:
         cuts = np.quantile(reference, qs)
-        # Ensure unique bin edges
         cuts = np.unique(cuts)
         if len(cuts) < 3:
-            return 0.0
+            return 0.0, empty_bins
 
-        ref_hist, _ = np.histogram(reference, bins=cuts)
+        ref_hist, bin_edges = np.histogram(reference, bins=cuts)
         cur_hist, _ = np.histogram(current, bins=cuts)
 
-        # Add small epsilon to avoid division by zero
         eps = 1e-6
         ref_prob = (ref_hist + eps) / np.sum(ref_hist + eps)
         cur_prob = (cur_hist + eps) / np.sum(cur_hist + eps)
 
         psi = float(np.sum((cur_prob - ref_prob) * np.log(cur_prob / ref_prob)))
-        return max(0.0, psi)
+
+        # Build bin labels and frequencies for frontend rendering
+        bin_labels = []
+        for i in range(len(bin_edges) - 1):
+            bin_labels.append(f"{bin_edges[i]:.1f}-{bin_edges[i+1]:.1f}")
+
+        bin_data = {
+            "edges": [round(float(e), 2) for e in bin_edges],
+            "labels": bin_labels,
+            "ref_freq": [round(float(p), 4) for p in ref_prob],
+            "cur_freq": [round(float(p), 4) for p in cur_prob],
+        }
+
+        return max(0.0, psi), bin_data
     except Exception:
-        return 0.0
+        return 0.0, empty_bins
 
 
 def _ks_statistic(reference: np.ndarray, current: np.ndarray) -> float:
@@ -95,6 +111,8 @@ async def compute_drift(db: AsyncSession, feature_key: str) -> Dict:
                 continue
         all_vals.append((float(val), r[1]))
 
+    bin_data = {"edges": [], "labels": [], "ref_freq": [], "cur_freq": []}
+
     if len(all_vals) < 10:
         psi = 0.0
         ks = 0.0
@@ -119,7 +137,7 @@ async def compute_drift(db: AsyncSession, feature_key: str) -> Dict:
         if cur_arr.ndim > 1:
             cur_arr = cur_arr[:, 0].astype(float)
 
-        psi = _psi(ref_arr, cur_arr)
+        psi, bin_data = _psi(ref_arr, cur_arr)
         ks = _ks_statistic(ref_arr, cur_arr)
         drift_detected = psi > PSI_THRESHOLD_WARNING
 
@@ -138,6 +156,7 @@ async def compute_drift(db: AsyncSession, feature_key: str) -> Dict:
         "currentWindow": [mid.isoformat(), now.isoformat()],
         "n_reference": len(all_vals) // 2,
         "n_current": len(all_vals) - len(all_vals) // 2,
+        "bins": bin_data,
     }
 
     dr = DriftReport(
