@@ -18,3 +18,6 @@ class ModelVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     path: Mapped[str] = mapped_column(String(255))
     metrics_json = mapped_column(json_type(), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="active", index=True
+    )

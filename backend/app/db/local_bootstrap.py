@@ -33,3 +33,10 @@ async def init_local_database() -> None:
                 """
             )
         )
+        # Add model_versions.status for champion/challenger (idempotent)
+        try:
+            await conn.execute(
+                text("ALTER TABLE model_versions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+            )
+        except Exception:
+            pass  # column already exists
