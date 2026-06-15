@@ -32,10 +32,16 @@ async def load_region_features(db: AsyncSession, region_id: int, start: datetime
         else:
             val = float(val)
 
-        # Parse ts (SQLite returns strings)
+        # Parse ts. SQLite/SQLAlchemy may return either raw strings or
+        # datetime objects, and the datetime objects can be a mix of
+        # tz-naive and tz-aware. Normalize everything to tz-aware UTC so
+        # downstream pivoting/sorting never compares naive vs aware.
         ts = f.ts
         if isinstance(ts, str):
             ts = pd.Timestamp(ts[:19], tz="UTC")
+        else:
+            ts = pd.Timestamp(ts)
+            ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
 
         rows.append({"ts": ts, "feature_key": f.feature_key, "value": val})
 
