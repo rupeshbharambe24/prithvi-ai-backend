@@ -89,17 +89,21 @@ async def promote_if_better(db: AsyncSession, target: str) -> bool:
     Returns True if a promotion happened. Fail-safe: on any error, keeps the
     current champion and returns False.
     """
-    from sqlalchemy import select, desc
+    from sqlalchemy import select, desc, text
 
     try:
-        chall = (await db.execute(
+        shadows = (await db.execute(
             select(ModelVersion)
             .where(ModelVersion.target == target, ModelVersion.status == "shadow")
             .order_by(desc(ModelVersion.created_at))
-            .limit(1)
-        )).scalars().first()
-        if chall is None:
+        )).scalars().all()
+        if not shadows:
             return False
+
+        chall = shadows[0]
+        # Any other (older, never-evaluated) shadows are superseded.
+        for other in shadows[1:]:
+            other.status = "rejected"
 
         champ = (await db.execute(
             select(ModelVersion)
@@ -109,8 +113,11 @@ async def promote_if_better(db: AsyncSession, target: str) -> bool:
         )).scalars().first()
 
         if _skill(chall) >= _skill(champ):
-            if champ is not None:
-                champ.status = "archived"
+            # Enforce <=1 active per target: archive ALL current actives, then promote.
+            await db.execute(
+                text("UPDATE model_versions SET status='archived' WHERE target=:t AND status='active'"),
+                {"t": target},
+            )
             chall.status = "active"
             await db.commit()
             return True
