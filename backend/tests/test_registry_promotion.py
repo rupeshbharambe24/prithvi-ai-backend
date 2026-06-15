@@ -18,6 +18,8 @@ async def _insert_mv(db, target, skill, status, ts):
 @pytest.mark.asyncio
 async def test_promote_better_challenger_wins():
     async with AsyncSessionLocal() as db:
+        await db.execute(text("DELETE FROM model_versions WHERE target=:t"), {"t": "test_promo_a"})
+        await db.commit()
         t = "test_promo_a"
         champ = await _insert_mv(db, t, 0.30, "active", datetime(2026, 1, 1, tzinfo=timezone.utc))
         chall = await _insert_mv(db, t, 0.50, "shadow", datetime(2026, 1, 8, tzinfo=timezone.utc))
@@ -32,6 +34,8 @@ async def test_promote_better_challenger_wins():
 @pytest.mark.asyncio
 async def test_reject_worse_challenger():
     async with AsyncSessionLocal() as db:
+        await db.execute(text("DELETE FROM model_versions WHERE target=:t"), {"t": "test_promo_b"})
+        await db.commit()
         t = "test_promo_b"
         champ = await _insert_mv(db, t, 0.60, "active", datetime(2026, 1, 1, tzinfo=timezone.utc))
         chall = await _insert_mv(db, t, 0.20, "shadow", datetime(2026, 1, 8, tzinfo=timezone.utc))
@@ -46,6 +50,8 @@ async def test_reject_worse_challenger():
 @pytest.mark.asyncio
 async def test_active_model_fallback_to_latest_when_no_status():
     async with AsyncSessionLocal() as db:
+        await db.execute(text("DELETE FROM model_versions WHERE target=:t"), {"t": "test_promo_c"})
+        await db.commit()
         t = "test_promo_c"
         await _insert_mv(db, t, 0.4, "archived", datetime(2026, 1, 1, tzinfo=timezone.utc))
         newest = await _insert_mv(db, t, 0.4, "shadow", datetime(2026, 2, 1, tzinfo=timezone.utc))
