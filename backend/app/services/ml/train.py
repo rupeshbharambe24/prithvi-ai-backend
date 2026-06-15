@@ -252,7 +252,7 @@ async def train_target(
         "max_depth": 4,
         "learning_rate": 0.05,
     }
-    await register_model(db, target, algo, params, metrics, model_bundle)
+    await register_model(db, target, algo, params, metrics, model_bundle, status="shadow")
 
     return ensemble
 

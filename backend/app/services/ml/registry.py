@@ -17,7 +17,8 @@ def _artifacts_root() -> str:
 
 
 async def register_model(
-    db: AsyncSession, target: str, algo: str, params: Dict[str, Any], metrics: Dict[str, Any], model_obj: Any
+    db: AsyncSession, target: str, algo: str, params: Dict[str, Any], metrics: Dict[str, Any],
+    model_obj: Any, status: str = "active",
 ) -> ModelVersion:
     root = _artifacts_root()
     os.makedirs(root, exist_ok=True)
@@ -33,6 +34,7 @@ async def register_model(
         created_at=datetime.now(timezone.utc),
         path=model_path,
         metrics_json=metrics,
+        status=status,
     )
     db.add(mv)
     await db.flush()
