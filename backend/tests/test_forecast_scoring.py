@@ -27,30 +27,41 @@ async def test_scoring_writes_row_and_is_idempotent():
         ))).scalar()
         await db.commit()
 
-        # A matured forecast 2 days ago + a matching heat_index feature actual
-        d = (datetime.now(timezone.utc) - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-        await db.execute(text(
-            "INSERT INTO forecasts (region_id, type, target_date, horizon, value, p05, p95, drivers_json) "
-            "VALUES (:r,'heat',:d,2,0.6,0.4,0.8,'[]')"
-        ), {"r": rid, "d": d})
-        await db.execute(text(
-            "INSERT INTO features (region_id, feature_key, ts, value, unit) VALUES (:r,'heat_index',:d,35.0,'C')"
-        ), {"r": rid, "d": d})
-        await db.commit()
+        try:
+            # A matured forecast 2 days ago + a matching heat_index feature actual
+            d = (datetime.now(timezone.utc) - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+            await db.execute(text(
+                "INSERT INTO forecasts (region_id, type, target_date, horizon, value, p05, p95, drivers_json) "
+                "VALUES (:r,'heat',:d,2,0.6,0.4,0.8,'[]')"
+            ), {"r": rid, "d": d})
+            await db.execute(text(
+                "INSERT INTO features (region_id, feature_key, ts, value, unit) VALUES (:r,'heat_index',:d,35.0,'C')"
+            ), {"r": rid, "d": d})
+            await db.commit()
 
-        before = (await db.execute(text(
-            "SELECT COUNT(*) FROM backtest_scores WHERE target='heat' AND region_id=:r"
-        ), {"r": rid})).scalar()
-        out = await score_due_forecasts(db)
-        assert isinstance(out, dict)
-        after = (await db.execute(text(
-            "SELECT COUNT(*) FROM backtest_scores WHERE target='heat' AND region_id=:r"
-        ), {"r": rid})).scalar()
-        assert after > before
+            before = (await db.execute(text(
+                "SELECT COUNT(*) FROM backtest_scores WHERE target='heat' AND region_id=:r"
+            ), {"r": rid})).scalar()
+            out = await score_due_forecasts(db)
+            assert isinstance(out, dict)
+            after = (await db.execute(text(
+                "SELECT COUNT(*) FROM backtest_scores WHERE target='heat' AND region_id=:r"
+            ), {"r": rid})).scalar()
+            assert after > before
 
-        # Re-run: no new rows for this region (idempotent — nothing past the new high-water mark)
-        await score_due_forecasts(db)
-        after2 = (await db.execute(text(
-            "SELECT COUNT(*) FROM backtest_scores WHERE target='heat' AND region_id=:r"
-        ), {"r": rid})).scalar()
-        assert after2 == after
+            # Re-run: no new rows for this region (idempotent — nothing past the new high-water mark)
+            await score_due_forecasts(db)
+            after2 = (await db.execute(text(
+                "SELECT COUNT(*) FROM backtest_scores WHERE target='heat' AND region_id=:r"
+            ), {"r": rid})).scalar()
+            assert after2 == after
+        finally:
+            # Self-clean the sentinel region and all dependent rows so it never
+            # leaks into the real DB (would pollute the region picker / break
+            # forecast generation). Runs whether or not assertions pass.
+            await db.rollback()
+            await db.execute(text("DELETE FROM backtest_scores WHERE region_id=:r"), {"r": rid})
+            await db.execute(text("DELETE FROM forecasts WHERE region_id=:r"), {"r": rid})
+            await db.execute(text("DELETE FROM features WHERE region_id=:r"), {"r": rid})
+            await db.execute(text("DELETE FROM regions WHERE code='TEST_SCORE'"))
+            await db.commit()

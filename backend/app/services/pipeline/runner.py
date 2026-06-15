@@ -34,21 +34,22 @@ async def refresh_forecasts(db: AsyncSession, horizon_days: int = 14) -> Dict:
     """Delete future forecasts and regenerate from the active model. Idempotent."""
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     regions = (await db.execute(select(Region))).scalars().all()
+    region_ids = [r.id for r in regions]  # plain ints: safe to use after a rollback expires ORM state
     total = 0
-    for reg in regions:
+    for rid in region_ids:
         for tgt in TARGETS:
             try:
                 await db.execute(text(
                     "DELETE FROM forecasts WHERE region_id=:r AND type=:t AND target_date >= :today"
-                ), {"r": reg.id, "t": tgt, "today": today})
-                forecasts = await forecast_target(db, tgt, reg.id, horizon_days)
+                ), {"r": rid, "t": tgt, "today": today})
+                forecasts = await forecast_target(db, tgt, rid, horizon_days)
                 for i, fc in enumerate(forecasts):
                     d = datetime.fromisoformat(fc["date"])
                     await db.execute(text(
                         "INSERT INTO forecasts (region_id, type, target_date, horizon, value, p05, p95, drivers_json) "
                         "VALUES (:r,:t,:d,:h,:v,:lo,:hi,:dr)"
                     ), {
-                        "r": reg.id, "t": tgt, "d": d, "h": i + 1,
+                        "r": rid, "t": tgt, "d": d, "h": i + 1,
                         "v": round(fc["risk"], 4), "lo": round(fc["p05"], 4),
                         "hi": round(fc["p95"], 4), "dr": json.dumps(fc["drivers"]),
                     })
@@ -56,7 +57,7 @@ async def refresh_forecasts(db: AsyncSession, horizon_days: int = 14) -> Dict:
                 await db.commit()
             except Exception as e:
                 await db.rollback()
-                logger.error("refresh_forecasts_failed target=%s region=%s: %s", tgt, reg.id, e)
+                logger.error("refresh_forecasts_failed target=%s region=%s: %s", tgt, rid, e)
     logger.info("forecasts_refreshed rows=%d", total)
     return {"rows": total}
 
