@@ -193,69 +193,23 @@ def _start_scheduler(app: FastAPI) -> None:
 
 
 async def _daily_ingest() -> None:
-    """Run all ETL pipelines for the last 7 days of data."""
     from .db.session import AsyncSessionLocal
-    from .services.etl.era5 import flow_era5_ingest
-    from .services.etl.openaq import flow_openaq_ingest
-    from .services.etl.who_gho import flow_who_gho_ingest
-    from .services.etl.population import flow_population_vulnerability
-    from .services.etl.google_trends import flow_google_trends_ingest
+    from .services.pipeline.runner import run_daily_pipeline
 
     logger.info("scheduled_daily_ingest_started")
-    now = datetime.now(timezone.utc)
-    start = now - timedelta(days=7)
-
-    try:
-        async with AsyncSessionLocal() as db:
-            result_era5 = await flow_era5_ingest(db, start, now)
-            logger.info("daily_ingest_era5", rows=result_era5.get("rows", 0))
-    except Exception as e:
-        logger.error("daily_ingest_era5_failed", error=str(e))
-
-    try:
-        async with AsyncSessionLocal() as db:
-            result_aq = await flow_openaq_ingest(db, start, now)
-            logger.info("daily_ingest_openaq", rows=result_aq.get("rows", 0))
-    except Exception as e:
-        logger.error("daily_ingest_openaq_failed", error=str(e))
-
-    try:
-        async with AsyncSessionLocal() as db:
-            result_gho = await flow_who_gho_ingest(db)
-            logger.info("daily_ingest_who_gho", rows=result_gho.get("rows", 0))
-    except Exception as e:
-        logger.error("daily_ingest_who_gho_failed", error=str(e))
-
-    try:
-        async with AsyncSessionLocal() as db:
-            result_pop = await flow_population_vulnerability(db)
-            logger.info("daily_ingest_population", rows=result_pop.get("rows", 0))
-    except Exception as e:
-        logger.error("daily_ingest_population_failed", error=str(e))
-
-    try:
-        async with AsyncSessionLocal() as db:
-            result_gt = await flow_google_trends_ingest(db, lookback_weeks=4)
-            logger.info("daily_ingest_google_trends", rows=result_gt.get("rows", 0))
-    except Exception as e:
-        logger.error("daily_ingest_google_trends_failed", error=str(e))
-
-    logger.info("scheduled_daily_ingest_complete")
+    async with AsyncSessionLocal() as db:
+        summary = await run_daily_pipeline(db, do_ingest=True)
+    logger.info("scheduled_daily_complete", summary=summary)
 
 
 async def _weekly_retrain() -> None:
-    """Retrain all ML models (placeholder — wired in Task #10)."""
+    from .db.session import AsyncSessionLocal
+    from .services.pipeline.runner import run_weekly_pipeline
+
     logger.info("scheduled_weekly_retrain_started")
-    try:
-        from .services.ml.train import retrain_all_models
-        from .db.session import AsyncSessionLocal
-        async with AsyncSessionLocal() as db:
-            await retrain_all_models(db)
-        logger.info("scheduled_weekly_retrain_complete")
-    except ImportError:
-        logger.info("ml_train_module_not_ready — skipping retrain")
-    except Exception as e:
-        logger.error("scheduled_weekly_retrain_failed", error=str(e))
+    async with AsyncSessionLocal() as db:
+        summary = await run_weekly_pipeline(db)
+    logger.info("scheduled_weekly_complete", summary=summary)
 
 
 app = create_app()
