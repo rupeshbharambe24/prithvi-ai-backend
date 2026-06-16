@@ -32,7 +32,7 @@ async def _actual_series(db: AsyncSession, target: str, region_id: int, start: d
     if "ts" in df.columns:
         # Normalize ts to tz-aware UTC before indexing/sorting (SQLite may
         # yield a mix of tz-naive and tz-aware timestamps).
-        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+        df["ts"] = pd.to_datetime(df["ts"], utc=True, format="mixed")
         df = df.set_index("ts").sort_index()
     if df.index.dtype == object:
         df.index = pd.to_datetime(df.index, utc=True)
@@ -67,7 +67,7 @@ async def score_due_forecasts(db: AsyncSession) -> Dict:
             continue
 
         fdf = pd.DataFrame(rows, columns=["target_date", "value", "p05", "p95"])
-        fdf["target_date"] = pd.to_datetime(fdf["target_date"], utc=True).dt.normalize()
+        fdf["target_date"] = pd.to_datetime(fdf["target_date"], utc=True, format="mixed").dt.normalize()
         fdf = fdf[fdf["target_date"] > hwm_dt]
         if fdf.empty:
             continue
