@@ -14,4 +14,5 @@ class CamelModel(BaseModel):
     class Config:
         populate_by_name = True
         alias_generator = to_camel
+        from_attributes = True
 
