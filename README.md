@@ -1,170 +1,197 @@
-PRITHVI-AI Backend
+<div align="center">
 
-FastAPI backend with a local single-process dev mode and optional Docker infra for advanced setups.
+# 🧠 PRITHVI-AI · Backend
 
-Local quick start
+### Climate-health risk forecasting API with a continuous ML loop
 
-- Prereqs: Python 3.11+
-- Setup:
+<br/>
 
-  - cp .env.example .env
-  - python -m venv .venv
-  - .venv\Scripts\activate
-  - pip install -e .
-  - uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.x%20async-D71F00?logo=sqlalchemy&logoColor=white)](https://www.sqlalchemy.org/)
+[![XGBoost](https://img.shields.io/badge/XGBoost-ML-EB5B25)](https://xgboost.readthedocs.io/)
+[![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)](#-testing)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](#-license)
 
-- Local mode defaults:
+*Part of [PRITHVI-AI](https://github.com/rupeshbharambe24/prithvi-ai) · pairs with the [frontend console](https://github.com/rupeshbharambe24/prithvi-ai-frontend).*
 
-  - SQLite database at `./prithvi.db`
-  - in-memory cache/rate-limit/jobs
-  - no Redis, MinIO, or Celery required to boot
-  - default seeded users are created on startup
+</div>
 
-- Demo users:
+---
 
-  - `admin@example.com` / `Admin123!`
-  - `viewer@example.com` / `Viewer123!`
+> [!NOTE]
+> A FastAPI backend that ingests **real open environmental data**, forecasts four coupled
+> health risks per region with uncertainty and SHAP drivers, grounds them in scientific
+> evidence, and runs a self-maintaining **train → predict → verify → retrain** loop.
+> Boots in seconds on SQLite — **no Docker, Redis, or cloud required.**
 
-Optional Docker mode
+## 📑 Contents
 
-- Docker files and compose config are still present in `infra/` for containerized setups.
+- [Highlights](#-highlights) · [What it predicts](#-what-it-predicts) · [Architecture](#-architecture)
+- [Data pipelines](#-data-pipelines) · [ML pipeline](#-ml-pipeline) · [Continuous loop](#-continuous-ml-loop)
+- [Quick start](#-quick-start) · [API](#-key-api-endpoints) · [Testing](#-testing) · [Project layout](#-project-layout)
 
-Frontend integration (Vite)
+## ⭐ Highlights
 
-- In `frontend/.env.development.local` set:
+- 🛰️ **Resilient ingestion** — every external source has a fallback (Open-Meteo→NASA POWER, OpenAQ→AQICN) with full dataset **lineage**.
+- 📈 **Explainable forecasts** — XGBoost (sklearn GBR fallback) with **p05/p95** quantile bands and **SHAP top-5 drivers** per prediction.
+- 🎯 **Honest accuracy** — skill scored against a **persistence baseline**; live forecast-vs-actual scoring into `backtest_scores`.
+- 🏆 **Champion/challenger** — weekly retrain promotes a new model **only if it beats the live one** (≤1 active per target).
+- 🛡️ **MLOps built-in** — PSI/KS **drift detection** with auto-retrain triggers, **fairness** gaps per region.
+- 📚 **Knowledge graph** — discovers papers (OpenAlex) → NER → entity/evidence graph.
+- 🎛️ **Decision tools** — scipy-LP **resource optimizer**, **scenario** engine, rule-based **alerts**.
+- 🔐 **Production-grade** — JWT cookies + CSRF, RBAC (5 roles), rate limiting, CSP, audit logging, structlog, OTel, Sentry.
 
-  VITE_API_BASE_URL=http://localhost:8000
-  VITE_API_PREFIX=/api/v1
+## 🎯 What it predicts
 
-- Ensure fetch/Axios includes credentials:
+| Target | Output | Primary real signal | Climate fallback |
+|--------|--------|---------------------|------------------|
+| 🌡️ `heat` | Heat-stress risk `0–1` | heat-index + WBGT | — |
+| 🦟 `disease` | Disease (dengue) risk `0–1` | Google Trends `dengue_search` → WHO counts | humidity + precip + heat |
+| 🏥 `surge` | Hospital ED surge `0–1` | Trends `heatstroke/hospital_search` | heat + PM2.5 |
+| 🌫️ `pm25` | PM2.5 concentration `µg/m³` | OpenAQ station observations | weather-based |
 
-  fetch(url, { credentials: 'include' })
+> [!TIP]
+> The design **prefers real outcome data and falls back to climate proxies only when absent** —
+> and logs which path was taken, citing the surveillance literature (Ginsberg et al. 2009; Yang et al. 2015).
 
-- For POST/PATCH/DELETE, send `X-CSRF-Token` header using the `csrf_token` cookie value.
+## 🏗️ Architecture
 
-- During Step 1 wire these pages:
+```mermaid
+flowchart TB
+    subgraph API["FastAPI · /api/v1"]
+        AUTH[auth · RBAC · CSRF]
+        ROUTES[risk · hospital · air · models<br/>kg · alerts · fairness · scenario · optimizer]
+    end
+    subgraph SVC["Services"]
+        ETL[etl/*]
+        MLS[ml/* — train · inference · scoring · registry]
+        QA[qa/* — drift · fairness]
+        PIPE[pipeline/runner — daily · weekly]
+        KGS[kg/* · optimizer/* · alerts/*]
+    end
+    subgraph DATA["Persistence"]
+        DB[(SQLite local /<br/>Postgres+Timescale+PostGIS prod)]
+        ART[(ml_artifacts/*.joblib)]
+    end
+    SCHED[APScheduler<br/>daily 06:00 · weekly Mon 07:00] --> PIPE
+    ROUTES --> SVC --> DB
+    MLS --> ART
+    AUTH --> DB
+```
 
-  - Login: POST /api/v1/auth/login, /api/v1/auth/refresh, /api/v1/auth/logout, /api/v1/auth/me
-  - Catalog: GET /api/v1/datasets, /api/v1/datasets/{id}/lineage
-  - Regions: GET /api/v1/regions
-  - SSE heartbeat: GET /api/v1/events/stream
+**Two run modes** — *local* (SQLite + in-memory cache/jobs, default, zero infra) and *production*
+(Postgres + TimescaleDB + PostGIS, Redis, Celery, MinIO; wired in `infra/docker-compose.yml`).
 
-cURL examples
+## 🛰️ Data pipelines
 
-- Login:
+Scheduled daily; each writes raw `observations` + derived `features` (heat-index, wet-bulb, **WBGT**) with lineage (`datasets → dataset_versions → ingest_runs`).
 
-  curl -i -X POST http://localhost:8000/api/v1/auth/login \
-    -H "Content-Type: application/json" \
-    -d '{"email":"admin@example.com","password":"Admin123!"}'
+| Flow | Source | Fallback |
+|------|--------|----------|
+| `open_meteo` / `era5` | Open-Meteo archive + 16-day forecast | NASA POWER |
+| `openaq` | OpenAQ v3 (nearest station ≤25 km) | AQICN / WAQI |
+| `google_trends` | Search-volume health proxies | — |
+| `who_gho` | WHO dengue counts | — |
+| `population` | Population vulnerability | — |
 
-- Health:
+## 🤖 ML pipeline
 
-  curl http://localhost:8000/api/v1/health
+```
+features → engineering (lags 1/3/7/14/28, rollings 3/7/14, sin/cos DOY, DOW one-hot)
+        → target fn → train/test split (last 30d test)
+        → XGBoost (200 trees, depth 4) + optional AutoETS
+        → metrics (RMSE/MAE/skill-vs-persistence) + SHAP drivers
+        → registry (versioned joblib + model_versions row)
+```
 
-- Long job + SSE:
+## 🔄 Continuous ML loop
 
-  curl -X POST http://localhost:8000/api/v1/demo/long-job
-  curl -N http://localhost:8000/api/v1/events/stream
+```mermaid
+flowchart LR
+    subgraph DAILY
+        I[ingest] --> S[score matured<br/>forecasts] --> R[refresh<br/>forecasts] --> DR{drift?}
+    end
+    subgraph WEEKLY
+        RT[retrain→shadow] --> CC{beats<br/>champion?}
+        CC -->|yes| P[promote] --> BF[backtest+fairness]
+        CC -->|no| RJ[reject] --> BF
+    end
+    DR -->|PSI ≥ 0.25| RT
+```
 
-Features
+Run on demand via the CLI (same code the scheduler runs):
 
-- FastAPI with versioned routes under /api
-- Auth: email+password, JWT in httpOnly cookies, refresh token, CSRF protection
-- RBAC roles: OrgAdmin, Epidemiologist, HospitalOps, FieldOfficer, Viewer
-- DB: PostgreSQL (TimescaleDB + PostGIS), SQLAlchemy 2.x (async), Alembic migrations
-- Cache/Queue: Redis 7, Celery workers + scheduler
-- Object store: MinIO wiring (S3-compatible), dev bucket auto-create
-- Streaming: SSE endpoint for job progress events
-- Observability: structlog, health, Sentry, OpenTelemetry (OTLP)
-- Security: CORS allowlist, rate limiting, CSP headers, audit logging
-- Tooling: Docker Compose, Makefile, Poetry, pre-commit, mypy, pytest
+```bash
+python -m backend.app.scripts.run_pipeline daily        # ingest + score + forecast + drift
+python -m backend.app.scripts.run_pipeline daily --no-ingest
+python -m backend.app.scripts.run_pipeline weekly        # retrain + promote + backtest + fairness
+python -m backend.app.scripts.run_pipeline score         # score matured forecasts only
+python -m backend.app.scripts.run_pipeline forecast      # refresh forward forecasts only
+```
 
-Acceptance
+## 🚀 Quick start
 
-- OpenAPI at /docs and /openapi.json
-- Tests: make test
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows  ·  source .venv/bin/activate on macOS/Linux
+pip install -e .
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-SSE Example Output
+- SQLite DB auto-created at `./prithvi.db`, demo users seeded on startup.
+- OpenAPI docs: **`http://localhost:8000/docs`**
 
-- Logs will show SSE events with job-progress updates during long job execution.
+**Demo users**
 
-Step 2 additions
+| Email | Password | Role |
+|-------|----------|------|
+| `admin@example.com` | `Admin123!` | OrgAdmin |
+| `viewer@example.com` | `Viewer123!` | Viewer |
 
-- Regions: import GeoJSON to PostGIS (bounds_geom, center, parent_id)
-- Datasets/catalog: datasets, dataset_versions, ingest_runs with lineage
-- Timeseries: observations (hypertable), features (hypertable) with derived metrics (heat_index, wet_bulb, wbgt)
-- Data Quality: dq_issues with API counts
-- Tiles: vector tiles (.mbtiles) built from regions/features; served via /tiles
-- ETL stubs: flows for era5, who_gho, population using local fixtures
-- Caching: Redis cache for hot series queries (5 min TTL)
+## 🔌 Key API endpoints
 
-Step 2 developer UX
+```http
+POST /api/v1/auth/login
+GET  /api/v1/risk/heat?regionId=1&horizon=7d
+GET  /api/v1/hospital/surge?regionId=1&horizon=7d
+GET  /api/v1/air/pm25?regionId=1&horizon=72h
+GET  /api/v1/models/registry?target=heat
+GET  /api/v1/models/all
+GET  /api/v1/kg/search?q=heat
+GET  /api/v1/fairness/heat   ·   GET /api/v1/data/series?...
+```
 
-- Import pilot regions:
+## 🧪 Testing
 
-  make import-regions file=backend/backend/tests/fixtures/regions_sample.geojson
+```bash
+pytest backend/tests -v
+```
+Continuous-pipeline test suite (status column, champion/challenger, scoring idempotency, runner, CLI):
+```bash
+pytest backend/tests/test_pipeline_runner.py backend/tests/test_registry_promotion.py \
+       backend/tests/test_forecast_scoring.py backend/tests/test_run_pipeline_cli.py -v
+```
 
-- Run ETL on fixtures:
+## 📁 Project layout
 
-  make etl-run dataset=era5 start=2024-07-01 end=2024-07-03
-  make etl-run dataset=who_gho
-  make etl-run dataset=population
+```
+backend/app/
+├── api/v1/        REST routes (risk, hospital, air, models, kg, alerts, fairness, …)
+├── services/
+│   ├── etl/       data ingestion flows (+ fallbacks)
+│   ├── ml/        train · inference · scoring · registry · features · explain
+│   ├── qa/        drift (PSI/KS) · fairness
+│   ├── pipeline/  runner — daily & weekly orchestration
+│   ├── kg/        paper discovery · NER · graph builder
+│   ├── optimizer/ scipy LP resource allocation
+│   └── alerts/    rule engine + delivery
+├── db/            models · migrations · session · local bootstrap
+├── scripts/       run_pipeline (CLI) · seed_dev
+└── workers/       Celery tasks (prod)
+docs/superpowers/  design spec + implementation plan for the continuous loop
+```
 
-- Build/push tiles:
+## 📜 License
 
-  make tiles-build feature=heat_index date=2024-07-01
-  make tiles-push feature=heat_index date=2024-07-01
-
-New endpoints
-
-- GET /api/v1/regions
-- GET /api/v1/datasets
-- GET /api/v1/datasets/{id}/lineage
-- GET /api/v1/data/series?regionId=&key=heat_index&from=&to=
-- GET /api/v1/data/export?datasetId=&regionId=&from=&to=&fmt=csv
-- GET /tiles/{layer}/{z}/{x}/{y}.mvt
-- GET /api/v1/data/quality?datasetId=
-
-Step 3 (Modeling & Analytics)
-
-- Train on fixtures:
-
-  make ml-train target=heat
-
-- Forecast all targets (defaults to 7 days):
-
-  make ml-forecast horizon=7
-
-- Backtest:
-
-  make ml-backtest target=heat start=2024-07-01 end=2024-08-01 step=7
-
-- APIs:
-
-  curl "http://localhost:8000/api/v1/risk/heat?regionId=1&horizon=7d"
-  curl "http://localhost:8000/api/v1/hospital/surge?regionId=1&horizon=7d"
-  curl "http://localhost:8000/api/v1/air/pm25?regionId=1&horizon=72h"
-  curl "http://localhost:8000/api/v1/models/registry?target=heat"
-
-Step 4 (KG, Alerts, Scenarios, Optimizer, Fairness)
-
-- KG import and embed:
-
-  make kg-import
-  make kg-embed
-  curl "http://localhost:8000/api/v1/kg/search?q=heat"
-
-- Alerts:
-
-  curl -X POST http://localhost:8000/api/v1/alerts/rules -H 'Content-Type: application/json' -d '{"name":"Heat >= 0.7","metric":"heat","condition":">=","threshold":0.7,"horizonDays":3,"severity":"warn","channels":["email"]}'
-  make alerts-run
-
-- Scenario & Optimizer:
-
-  make scenario-run file=backend/backend/tests/fixtures/scenario_input.json
-  make optimizer-run file=backend/backend/tests/fixtures/optimizer_inputs.json
-
-- Fairness & Drift:
-
-  make fairness-eval target=heat
-  make drift-check feature=heat_index
+MIT.
