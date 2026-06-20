@@ -33,6 +33,41 @@ async def ensure_dataset(db: AsyncSession) -> Dataset:
     return ds
 
 
+async def _get_json(
+    client: httpx.AsyncClient, url: str, params: Optional[dict], headers: dict, attempts: int = 4
+) -> Optional[dict]:
+    """GET JSON with exponential backoff.
+
+    OpenAQ's free tier intermittently returns transient 401/403/429/5xx under
+    load or quota pressure even with a valid key. Treat those (and network
+    errors) as retryable so a momentary blip doesn't blank the whole ingest and
+    force an unnecessary fallback.
+    """
+    delay = 1.0
+    for i in range(attempts):
+        try:
+            resp = await client.get(url, params=params, headers=headers)
+            if resp.status_code == 200:
+                return resp.json()
+            if resp.status_code in (401, 403, 429) or resp.status_code >= 500:
+                ra = resp.headers.get("retry-after")
+                wait = float(ra) if (ra and ra.isdigit()) else delay
+                logger.warning(
+                    "openaq_retry status=%s url=%s wait=%.1fs (attempt %d/%d)",
+                    resp.status_code, url, wait, i + 1, attempts,
+                )
+                await asyncio.sleep(wait)
+                delay = min(delay * 2, 10.0)
+                continue
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            logger.warning("openaq_http_error url=%s: %s (attempt %d/%d)", url, e, i + 1, attempts)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 10.0)
+    logger.warning("openaq_get_failed after %d attempts: %s", attempts, url)
+    return None
+
+
 async def _find_pm25_sensor(
     client: httpx.AsyncClient, lat: float, lon: float, headers: dict, max_age_days: int = 45
 ) -> Optional[tuple[int, int]]:
@@ -45,28 +80,24 @@ async def _find_pm25_sensor(
     ``max_age_days``. Returns ``(location_id, sensor_id)`` or ``None``.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    try:
-        resp = await client.get(
-            f"{OPENAQ_BASE}/locations",
-            params={"coordinates": f"{lat},{lon}", "radius": 25000, "limit": 50},
-            headers=headers,
-        )
-        resp.raise_for_status()
-        locations = resp.json().get("results", [])
-    except Exception as e:
-        logger.warning("openaq_locations_failed: %s", e)
+    data = await _get_json(
+        client,
+        f"{OPENAQ_BASE}/locations",
+        {"coordinates": f"{lat},{lon}", "radius": 25000, "limit": 50},
+        headers,
+    )
+    if not data:
         return None
+    locations = data.get("results", [])
 
     for loc in locations[:12]:  # nearest-first
         loc_id = loc.get("id")
         if loc_id is None:
             continue
-        try:
-            sresp = await client.get(f"{OPENAQ_BASE}/locations/{loc_id}/sensors", headers=headers)
-            sresp.raise_for_status()
-            sensors = sresp.json().get("results", [])
-        except Exception:
+        sdata = await _get_json(client, f"{OPENAQ_BASE}/locations/{loc_id}/sensors", None, headers)
+        if not sdata:
             continue
+        sensors = sdata.get("results", [])
         best: Optional[tuple[str, int]] = None  # (datetimeLast_utc, sensor_id)
         for s in sensors:
             if (s.get("parameter") or {}).get("name", "").lower() not in ("pm25", "pm2.5"):
@@ -95,17 +126,15 @@ async def _fetch_daily_pm25(
     """
     collected: List[tuple[str, float]] = []
     for page in range(1, max_pages + 1):
-        try:
-            resp = await client.get(
-                f"{OPENAQ_BASE}/sensors/{sensor_id}/days",
-                params={"limit": 1000, "page": page},
-                headers=headers,
-            )
-            resp.raise_for_status()
-            results = resp.json().get("results", [])
-        except Exception as e:
-            logger.warning("openaq_days_failed sensor=%s page=%s: %s", sensor_id, page, e)
+        data = await _get_json(
+            client,
+            f"{OPENAQ_BASE}/sensors/{sensor_id}/days",
+            {"limit": 1000, "page": page},
+            headers,
+        )
+        if not data:
             break
+        results = data.get("results", [])
         for rec in results:
             val = rec.get("value")
             period = rec.get("period", {}) or {}
