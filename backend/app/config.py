@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 
-load_dotenv()
+# override=True so the project's .env always wins over a stale value left in the
+# shell/OS environment (e.g. an old OPENAQ_API_KEY exported in a terminal session).
+load_dotenv(override=True)
 
 
 def _raw_database_url() -> str:
