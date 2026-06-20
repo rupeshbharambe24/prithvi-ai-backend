@@ -44,17 +44,19 @@ async def _get_json(
     force an unnecessary fallback.
     """
     delay = 1.0
+    last_body = ""
     for i in range(attempts):
         try:
             resp = await client.get(url, params=params, headers=headers)
             if resp.status_code == 200:
                 return resp.json()
+            last_body = resp.text[:200]
             if resp.status_code in (401, 403, 429) or resp.status_code >= 500:
                 ra = resp.headers.get("retry-after")
                 wait = float(ra) if (ra and ra.isdigit()) else delay
                 logger.warning(
-                    "openaq_retry status=%s url=%s wait=%.1fs (attempt %d/%d)",
-                    resp.status_code, url, wait, i + 1, attempts,
+                    "openaq_retry status=%s url=%s wait=%.1fs (attempt %d/%d) body=%s",
+                    resp.status_code, url, wait, i + 1, attempts, last_body,
                 )
                 await asyncio.sleep(wait)
                 delay = min(delay * 2, 10.0)
@@ -64,7 +66,7 @@ async def _get_json(
             logger.warning("openaq_http_error url=%s: %s (attempt %d/%d)", url, e, i + 1, attempts)
             await asyncio.sleep(delay)
             delay = min(delay * 2, 10.0)
-    logger.warning("openaq_get_failed after %d attempts: %s", attempts, url)
+    logger.warning("openaq_get_failed after %d attempts: %s | last_body=%s", attempts, url, last_body)
     return None
 
 
@@ -164,8 +166,13 @@ async def flow_openaq_ingest(db: AsyncSession, start: datetime, end: datetime) -
     rows_inserted = 0
 
     headers = {}
-    if settings.openaq_api_key:
-        headers["X-API-Key"] = settings.openaq_api_key
+    _key = settings.openaq_api_key or ""
+    if _key:
+        headers["X-API-Key"] = _key
+    logger.info(
+        "openaq key fingerprint: present=%s first4=%s last4=%s len=%d",
+        bool(_key), _key[:4], _key[-4:], len(_key),
+    )
 
     async with httpx.AsyncClient(timeout=30) as client:
         for reg in regions:
