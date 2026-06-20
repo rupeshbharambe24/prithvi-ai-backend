@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 OPENAQ_BASE = "https://api.openaq.org/v3"
 DATASET_NAME = "openaq"
 
+# Plausibility ceiling for a *daily-mean* PM2.5 reading (µg/m³). India's AQI
+# "severe" tops out near 500; daily means above this are sensor errors and are
+# clipped so a single bad reading can't dominate models that use pm25_obs.
+PM25_MAX = 500.0
+
 
 async def ensure_dataset(db: AsyncSession) -> Dataset:
     res = await db.execute(select(Dataset).where(Dataset.name == DATASET_NAME))
@@ -146,7 +151,7 @@ async def _fetch_daily_pm25(
             period = rec.get("period", {}) or {}
             dt_str = (period.get("datetimeFrom", {}) or {}).get("utc", "")[:10]
             if val is not None and dt_str:
-                collected.append((dt_str, float(val)))
+                collected.append((dt_str, min(max(float(val), 0.0), PM25_MAX)))
         if len(results) < 1000:
             break
         await asyncio.sleep(0.3)
@@ -257,11 +262,12 @@ async def _fallback_aqicn(db: AsyncSession, ds: Dataset, reg: Region, start: dat
             data = resp.json().get("data", {})
             pm25 = data.get("iaqi", {}).get("pm25", {}).get("v")
             if pm25 is not None:
+                pm25 = min(max(float(pm25), 0.0), PM25_MAX)
                 now = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-                db.add(Observation(region_id=reg.id, dataset_id=ds.id, ts=now, value=float(pm25), unit="ug/m3"))
+                db.add(Observation(region_id=reg.id, dataset_id=ds.id, ts=now, value=pm25, unit="ug/m3"))
                 db.add(Feature(
                     region_id=reg.id, feature_key="pm25_obs", ts=now,
-                    value=float(pm25), unit="ug/m3", p05=None, p95=None,
+                    value=pm25, unit="ug/m3", p05=None, p95=None,
                 ))
                 return 2
     except Exception as e:
