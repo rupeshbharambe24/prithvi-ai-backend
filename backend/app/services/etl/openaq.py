@@ -51,17 +51,21 @@ async def _get_json(
             if resp.status_code == 200:
                 return resp.json()
             last_body = resp.text[:200]
-            if resp.status_code in (401, 403, 429) or resp.status_code >= 500:
-                ra = resp.headers.get("retry-after")
-                wait = float(ra) if (ra and ra.isdigit()) else delay
+            if resp.status_code == 429 or resp.status_code >= 500:
+                # Genuine rate-limit / server error: wait for the reset and retry.
+                ra = resp.headers.get("retry-after") or resp.headers.get("x-ratelimit-reset")
+                wait = float(ra) if (ra and str(ra).isdigit()) else delay
                 logger.warning(
-                    "openaq_retry status=%s url=%s wait=%.1fs (attempt %d/%d) body=%s",
-                    resp.status_code, url, wait, i + 1, attempts, last_body,
+                    "openaq_retry status=%s url=%s wait=%.1fs (attempt %d/%d)",
+                    resp.status_code, url, wait, i + 1, attempts,
                 )
-                await asyncio.sleep(wait)
+                await asyncio.sleep(min(wait, 30.0))
                 delay = min(delay * 2, 10.0)
                 continue
-            resp.raise_for_status()
+            # 401/403/other 4xx: auth/permission/quota block. Retrying won't help
+            # and only adds load to an already-rejecting key — fail fast to fallback.
+            logger.warning("openaq_auth_failed status=%s url=%s body=%s", resp.status_code, url, last_body)
+            return None
         except httpx.HTTPError as e:
             logger.warning("openaq_http_error url=%s: %s (attempt %d/%d)", url, e, i + 1, attempts)
             await asyncio.sleep(delay)
