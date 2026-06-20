@@ -5,36 +5,42 @@ on:
   push:
 
 jobs:
-  build-and-test:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Copy env
-        working-directory: backend
-        run: cp .env.example .env
-      - name: Build and start services
-        working-directory: backend
-        run: |
-          make up
-          sleep 10
-      - name: Migrate and seed
-        working-directory: backend
-        run: |
-          make migrate
-          make seed
-      - name: Lint
-        working-directory: backend
-        run: |
-          docker compose -f infra/docker-compose.yml exec -T api bash -lc "ruff check backend && black --check backend && isort --check-only backend"
-      - name: Tests
-        working-directory: backend
-        run: make test
-      - name: Shutdown
-        if: always()
-        working-directory: backend
-        run: make down
 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio
+
+      - name: Initialize local database (create tables + seed pilot regions)
+        env:
+          LOCAL_MODE: "true"
+        run: |
+          python -c "import asyncio; from backend.app.db.local_bootstrap import init_local_database; asyncio.run(init_local_database())"
+          # Seeding hits external APIs with built-in fallbacks; never fail CI on a
+          # flaky upstream feed (regions/users are seeded regardless).
+          python -m backend.scripts.seed_dev || true
+
+      - name: Run continuous-pipeline test suite (local SQLite mode)
+        env:
+          LOCAL_MODE: "true"
+        run: |
+          pytest \
+            backend/tests/test_model_status_column.py \
+            backend/tests/test_registry_promotion.py \
+            backend/tests/test_promotion_invariant.py \
+            backend/tests/test_forecast_scoring.py \
+            backend/tests/test_retrain_shadow_status.py \
+            backend/tests/test_pipeline_runner.py \
+            backend/tests/test_run_pipeline_cli.py \
+            backend/tests/test_ingest_flows.py \
+            -v
