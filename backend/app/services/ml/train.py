@@ -60,6 +60,14 @@ def _prepare_features(df: pd.DataFrame, target_config: dict) -> pd.DataFrame:
     X = df[available].copy()
     X = add_lags_rollings(X, available)
     X = add_time_features(X)
+
+    # Autoregressive target: keep only LAGGED values of the target's own
+    # observation. Drop the contemporaneous column and any current-including
+    # rolling mean, which would leak the target into the features.
+    ar_key = target_config.get("ar_key")
+    if ar_key:
+        leak_cols = [c for c in X.columns if c == ar_key or c.startswith(f"{ar_key}_roll")]
+        X = X.drop(columns=leak_cols, errors="ignore")
     return X
 
 

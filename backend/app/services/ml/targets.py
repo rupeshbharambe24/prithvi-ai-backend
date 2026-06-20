@@ -141,7 +141,11 @@ TARGET_CONFIG = {
     },
     "pm25": {
         "fn": pm25_target,
-        "exog_keys": ["wind_max", "t2m_max", "rh_mean", "prcp_sum"],
+        # pm25_obs is included so the model can use *lagged* PM2.5 (autoregressive)
+        # to beat persistence; the contemporaneous value + current-including rolling
+        # are dropped in feature prep (ar_key) to avoid leaking the target.
+        "exog_keys": ["pm25_obs", "wind_max", "t2m_max", "rh_mean", "prcp_sum"],
         "normalize": False,
+        "ar_key": "pm25_obs",
     },
 }
