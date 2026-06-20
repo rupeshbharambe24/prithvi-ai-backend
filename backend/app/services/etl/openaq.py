@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import get_settings
@@ -33,55 +33,94 @@ async def ensure_dataset(db: AsyncSession) -> Dataset:
     return ds
 
 
-async def _find_nearest_station(
-    client: httpx.AsyncClient, lat: float, lon: float, headers: dict
-) -> Optional[int]:
-    """Find nearest PM2.5 monitoring station within 25km."""
+async def _find_pm25_sensor(
+    client: httpx.AsyncClient, lat: float, lon: float, headers: dict, max_age_days: int = 45
+) -> Optional[tuple[int, int]]:
+    """Find the nearest location whose *active* PM2.5 sensor has recent data.
+
+    OpenAQ v3 stores measurements under sensors, and a single location can expose
+    several PM2.5 sensors (a decommissioned one plus a live one), so we pick the
+    sensor with the most recent ``datetimeLast``. Locations are returned
+    nearest-first; we take the first whose freshest PM2.5 sensor is within
+    ``max_age_days``. Returns ``(location_id, sensor_id)`` or ``None``.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         resp = await client.get(
             f"{OPENAQ_BASE}/locations",
-            params={"coordinates": f"{lat},{lon}", "radius": 25000, "limit": 5},
+            params={"coordinates": f"{lat},{lon}", "radius": 25000, "limit": 50},
             headers=headers,
         )
         resp.raise_for_status()
-        results = resp.json().get("results", [])
-        # Find a station that has PM2.5 parameter
-        for loc in results:
-            params = loc.get("parameters", [])
-            for p in params:
-                if isinstance(p, dict) and p.get("name", "").lower() in ("pm25", "pm2.5"):
-                    return loc["id"]
-            # Also check by parameter list structure
-            if any(isinstance(p, dict) and "pm25" in str(p).lower() for p in params):
-                return loc["id"]
-        # If no PM2.5 specific, return first station
-        if results:
-            return results[0]["id"]
+        locations = resp.json().get("results", [])
     except Exception as e:
-        logger.warning("openaq_find_station_failed: %s", e)
+        logger.warning("openaq_locations_failed: %s", e)
+        return None
+
+    for loc in locations[:12]:  # nearest-first
+        loc_id = loc.get("id")
+        if loc_id is None:
+            continue
+        try:
+            sresp = await client.get(f"{OPENAQ_BASE}/locations/{loc_id}/sensors", headers=headers)
+            sresp.raise_for_status()
+            sensors = sresp.json().get("results", [])
+        except Exception:
+            continue
+        best: Optional[tuple[str, int]] = None  # (datetimeLast_utc, sensor_id)
+        for s in sensors:
+            if (s.get("parameter") or {}).get("name", "").lower() not in ("pm25", "pm2.5"):
+                continue
+            dl = s.get("datetimeLast")
+            dl_utc = dl.get("utc") if isinstance(dl, dict) else dl
+            sid = s.get("id")
+            if not dl_utc or sid is None:
+                continue
+            if best is None or dl_utc > best[0]:
+                best = (dl_utc, sid)
+        if best and best[0] >= cutoff:
+            logger.info("openaq pm25 sensor=%s loc=%s last=%s", best[1], loc_id, best[0])
+            return loc_id, best[1]
     return None
 
 
-async def _fetch_measurements(
-    client: httpx.AsyncClient, location_id: int, start: str, end: str, headers: dict
-) -> List[Dict]:
-    """Fetch PM2.5 measurements from a station."""
-    try:
-        resp = await client.get(
-            f"{OPENAQ_BASE}/locations/{location_id}/measurements",
-            params={
-                "parameter": "pm25",
-                "date_from": start,
-                "date_to": end,
-                "limit": 1000,
-            },
-            headers=headers,
-        )
-        resp.raise_for_status()
-        return resp.json().get("results", [])
-    except Exception as e:
-        logger.warning("openaq_fetch_measurements_failed: %s", e)
-        return []
+async def _fetch_daily_pm25(
+    client: httpx.AsyncClient, sensor_id: int, headers: dict, recent_days: int = 120, max_pages: int = 5
+) -> List[tuple[str, float]]:
+    """Fetch daily PM2.5 for a sensor via ``/sensors/{id}/days``.
+
+    The v3 ``/days`` endpoint returns oldest-first and ignores date filters, so we
+    paginate (limit 1000) up to ``max_pages`` and keep the most recent
+    ``recent_days`` days. Returns a list of ``(YYYY-MM-DD, value)``.
+    """
+    collected: List[tuple[str, float]] = []
+    for page in range(1, max_pages + 1):
+        try:
+            resp = await client.get(
+                f"{OPENAQ_BASE}/sensors/{sensor_id}/days",
+                params={"limit": 1000, "page": page},
+                headers=headers,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+        except Exception as e:
+            logger.warning("openaq_days_failed sensor=%s page=%s: %s", sensor_id, page, e)
+            break
+        for rec in results:
+            val = rec.get("value")
+            period = rec.get("period", {}) or {}
+            dt_str = (period.get("datetimeFrom", {}) or {}).get("utc", "")[:10]
+            if val is not None and dt_str:
+                collected.append((dt_str, float(val)))
+        if len(results) < 1000:
+            break
+        await asyncio.sleep(0.3)
+
+    # De-dupe by date (last value wins), keep the most recent days
+    by_date: Dict[str, float] = {}
+    for d, v in collected:
+        by_date[d] = v
+    return sorted(by_date.items())[-recent_days:]
 
 
 async def flow_openaq_ingest(db: AsyncSession, start: datetime, end: datetime) -> dict:
@@ -99,9 +138,6 @@ async def flow_openaq_ingest(db: AsyncSession, start: datetime, end: datetime) -
     if settings.openaq_api_key:
         headers["X-API-Key"] = settings.openaq_api_key
 
-    start_str = start.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_str = end.strftime("%Y-%m-%dT%H:%M:%SZ")
-
     async with httpx.AsyncClient(timeout=30) as client:
         for reg in regions:
             center = reg.center if isinstance(reg.center, dict) else {}
@@ -110,36 +146,41 @@ async def flow_openaq_ingest(db: AsyncSession, start: datetime, end: datetime) -
 
             logger.info("Fetching OpenAQ data for %s (%.2f, %.2f)", reg.name, lat, lon)
 
-            station_id = await _find_nearest_station(client, lat, lon, headers)
-            if not station_id:
-                logger.warning("No OpenAQ station found near %s, using AQICN fallback", reg.name)
+            found = await _find_pm25_sensor(client, lat, lon, headers)
+            if not found:
+                logger.warning("No fresh OpenAQ PM2.5 sensor near %s, using AQICN fallback", reg.name)
                 rows_inserted += await _fallback_aqicn(db, ds, reg, start, end)
                 continue
 
-            measurements = await _fetch_measurements(client, station_id, start_str, end_str, headers)
+            _loc_id, sensor_id = found
+            daily = await _fetch_daily_pm25(client, sensor_id, headers)
+            if not daily:
+                logger.warning("No daily PM2.5 for %s (sensor %s), using AQICN fallback", reg.name, sensor_id)
+                rows_inserted += await _fallback_aqicn(db, ds, reg, start, end)
+                continue
 
-            # Aggregate hourly measurements to daily averages
-            daily_pm25: Dict[str, List[float]] = {}
-            for m in measurements:
-                val = m.get("value")
-                period = m.get("period", {})
-                dt_str = period.get("datetimeFrom", {}).get("utc", "")[:10]
-                if val is not None and dt_str:
-                    daily_pm25.setdefault(dt_str, []).append(float(val))
+            # Idempotent refresh: clear existing rows in the window we're re-ingesting
+            min_day = daily[0][0]
+            await db.execute(
+                text("DELETE FROM features WHERE region_id=:r AND feature_key='pm25_obs' AND ts >= :mn"),
+                {"r": reg.id, "mn": min_day},
+            )
+            await db.execute(
+                text("DELETE FROM observations WHERE region_id=:r AND dataset_id=:d AND ts >= :mn"),
+                {"r": reg.id, "d": ds.id, "mn": min_day},
+            )
 
-            for date_str, values in sorted(daily_pm25.items()):
-                avg_pm25 = sum(values) / len(values)
+            for date_str, value in daily:
                 day = datetime(int(date_str[:4]), int(date_str[5:7]), int(date_str[8:10]), tzinfo=timezone.utc)
-
-                db.add(Observation(region_id=reg.id, dataset_id=ds.id, ts=day, value=avg_pm25, unit="ug/m3"))
+                db.add(Observation(region_id=reg.id, dataset_id=ds.id, ts=day, value=value, unit="ug/m3"))
                 db.add(Feature(
                     region_id=reg.id, feature_key="pm25_obs", ts=day,
-                    value=avg_pm25, unit="ug/m3", p05=None, p95=None,
+                    value=value, unit="ug/m3", p05=None, p95=None,
                 ))
                 rows_inserted += 2
 
             # Rate limit courtesy
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5)
 
     # Versioning
     dv = DatasetVersion(
