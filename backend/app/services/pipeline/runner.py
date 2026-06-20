@@ -68,6 +68,7 @@ async def _ingest_all(db: AsyncSession) -> Dict:
     from ..etl.who_gho import flow_who_gho_ingest
     from ..etl.population import flow_population_vulnerability
     from ..etl.google_trends import flow_google_trends_ingest
+    from ..etl.wikipedia_pageviews import flow_wikipedia_pageviews_ingest
 
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=7)
@@ -78,6 +79,7 @@ async def _ingest_all(db: AsyncSession) -> Dict:
         ("who_gho", flow_who_gho_ingest(db)),
         ("population", flow_population_vulnerability(db)),
         ("google_trends", flow_google_trends_ingest(db, lookback_weeks=4)),
+        ("wikipedia", flow_wikipedia_pageviews_ingest(db, lookback_days=120)),
     ]:
         try:
             res = await coro
