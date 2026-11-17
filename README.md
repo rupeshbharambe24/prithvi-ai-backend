@@ -11,7 +11,7 @@
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.x%20async-D71F00?logo=sqlalchemy&logoColor=white)](https://www.sqlalchemy.org/)
 [![XGBoost](https://img.shields.io/badge/XGBoost-ML-EB5B25)](https://xgboost.readthedocs.io/)
 [![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)](#-testing)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](#-license)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 *Part of [PRITHVI-AI](https://github.com/rupeshbharambe24/prithvi-ai) · pairs with the [frontend console](https://github.com/rupeshbharambe24/prithvi-ai-frontend).*
 
@@ -30,6 +30,7 @@
 - [Highlights](#-highlights) · [What it predicts](#-what-it-predicts) · [Architecture](#-architecture)
 - [Data pipelines](#-data-pipelines) · [ML pipeline](#-ml-pipeline) · [Continuous loop](#-continuous-ml-loop)
 - [Quick start](#-quick-start) · [API](#-key-api-endpoints) · [Testing](#-testing) · [Project layout](#-project-layout)
+- [Related repositories](#-related-repositories) · [License](#-license)
 
 ## ⭐ Highlights
 
@@ -189,9 +190,21 @@ backend/app/
 ├── db/            models · migrations · session · local bootstrap
 ├── scripts/       run_pipeline (CLI) · seed_dev
 └── workers/       Celery tasks (prod)
+backend/tests/     pytest suite + fixtures
+backend/config/    scenario definitions (YAML)
+infra/             Dockerfiles + docker-compose (production mode)
 docs/superpowers/  design spec + implementation plan for the continuous loop
 ```
 
+## 🔗 Related repositories
+
+| Repository | Role |
+|------------|------|
+| [`prithvi-ai`](https://github.com/rupeshbharambe24/prithvi-ai) | Umbrella repo (backend + frontend as submodules, weekly pipeline runner) |
+| **`prithvi-ai-backend`** | This repo: API, data pipelines, ML loop |
+| [`prithvi-ai-frontend`](https://github.com/rupeshbharambe24/prithvi-ai-frontend) | React operations console |
+| [`prithvi-nexus`](https://github.com/rupeshbharambe24/prithvi-nexus) | Earlier console snapshot (superseded by the frontend) |
+
 ## 📜 License
 
-MIT.
+[MIT](LICENSE) © 2026 Rupesh Bharambe
